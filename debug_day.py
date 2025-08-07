@@ -8,10 +8,10 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from pyproj import Transformer
+import argparse
 
 # Configuration
 CONFIG = {
-    "center_coords": {"lat": 48.71725, "lon": 2.20884}, # SIRTA
     "aoi_radius_km": 20,
     "geos_proj_str": "+proj=geos +a=6378137.0 +b=6356752.3 +lon_0=0.0 +h=35785863.0 +sweep=y",
     "cloud_categories": {
@@ -28,9 +28,10 @@ def _haversine_km(lat0, lon0, lat1, lon1):
     _, _, dist_m = geod.inv(lon0, lat0, lon1, lat1)
     return dist_m / 1000
 
-def analyze_day(day_path):
+def analyze_day(day_path, center_coords):
     """Analyze cloud types for a specific day."""
     print(f"Analyzing {day_path}")
+    print(f"Center coordinates: {center_coords['lat']:.4f}°N, {center_coords['lon']:.4f}°E")
     
     # Get all CT files for the day
     ct_files = sorted(day_path.glob("S_NWC_CT_MSG*_globeM-VISIR_*.nc"))
@@ -52,7 +53,7 @@ def analyze_day(day_path):
         lon2d, lat2d = transformer.transform(nx_grid, ny_grid)
         
         # Find AOI
-        center_lat, center_lon = CONFIG["center_coords"]["lat"], CONFIG["center_coords"]["lon"]
+        center_lat, center_lon = center_coords["lat"], center_coords["lon"]
         dist_sq = (lat2d - center_lat)**2 + (lon2d - center_lon)**2
         y0, x0 = np.unravel_index(np.nanargmin(dist_sq), dist_sq.shape)
         
@@ -132,6 +133,34 @@ def analyze_day(day_path):
         top_types = sorted(row['percentages'].items(), key=lambda x: x[1], reverse=True)[:5]
         print(f"  Top cloud types: {top_types}")
 
+def main():
+    parser = argparse.ArgumentParser(description='Debug cloud type data for a specific day')
+    parser.add_argument('--date', required=True, help='Date in YYYY-MM-DD format (e.g., 2024-04-11)')
+    parser.add_argument('--lat', type=float, required=True, help='Latitude of center point')
+    parser.add_argument('--lon', type=float, required=True, help='Longitude of center point')
+    parser.add_argument('--radius', type=float, default=20, help='AOI radius in km (default: 20)')
+    
+    args = parser.parse_args()
+    
+    # Update config with provided radius
+    CONFIG["aoi_radius_km"] = args.radius
+    
+    # Create center coordinates
+    center_coords = {"lat": args.lat, "lon": args.lon}
+    
+    # Convert date to directory format
+    date_parts = args.date.split('-')
+    if len(date_parts) != 3:
+        print("Error: Date must be in YYYY-MM-DD format")
+        return
+    
+    year, month, day = date_parts
+    day_path = Path(f"/mnt/m0/y-m.saint-drenan/data/NWCSAF_CloudType/{year}/{year}_{month:0>2}_{day:0>2}/")
+    
+    print(f"=== ANALYZING {args.date} ===")
+    print(f"Coordinates: {args.lat:.4f}°N, {args.lon:.4f}°E")
+    print(f"AOI radius: {args.radius} km")
+    analyze_day(day_path, center_coords)
+
 if __name__ == "__main__":
-    day_path = Path("/mnt/m0/y-m.saint-drenan/data/NWCSAF_CloudType/2024/2024_09_17/")
-    analyze_day(day_path) 
+    main() 
