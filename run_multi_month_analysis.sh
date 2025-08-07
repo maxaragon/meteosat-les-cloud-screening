@@ -15,7 +15,95 @@
 # Configuration
 SCRIPT_DIR="/mnt/m1/max.aragon_cerecedes/METEOSAT-LES"
 DATA_ROOT="/mnt/m0/y-m.saint-drenan/data/NWCSAF_CloudType/2024"
+
+# Months to process - EDIT THIS ARRAY TO CHANGE PROCESSING MONTHS
 MONTHS=("2024-04" "2024-05" "2024-06" "2024-07" "2024-08" "2024-09")
+
+# Function to show help
+show_help() {
+    echo "Multi-Month LES Analysis and Visualization Script"
+    echo "================================================"
+    echo ""
+    echo "Usage: $0 SITE"
+    echo ""
+    echo "SITE options:"
+    echo "  PALAISEAU  - SIRTA Observatory, France (48.717°N, 2.209°E)"
+    echo "  MUNICH     - LMU Munich, Germany (48.148°N, 11.573°E)"
+    echo "  CABAUW     - Cabauw Observatory, Netherlands (51.968°N, 4.927°E)"
+    echo "  LINDENBERG - Lindenberg Observatory, Germany (52.208°N, 14.118°E)"
+    echo ""
+    echo "CloudNet Sites:"
+    echo "  BUCHAREST  - Bucharest, Romania (44.344°N, 26.012°E)"
+    echo "  CHILBOLTON - Chilbolton, UK (51.144°N, 1.439°W)"
+    echo "  CLUJ       - Cluj-Napoca, Romania (46.768°N, 23.540°E)"
+    echo "  GALATI     - Galați, Romania (45.435°N, 28.037°E)"
+    echo "  GRANADA    - Granada, Spain (37.164°N, 3.605°W)"
+    echo "  HYYTIALA   - Hyytiälä, Finland (61.844°N, 24.287°E)"
+    echo "  JUELICH    - Jülich, Germany (50.908°N, 6.413°E)"
+    echo "  KENTTAROVA - Kenttärova, Finland (67.987°N, 24.243°E)"
+    echo "  LAMPEDUSA  - Lampedusa, Italy (35.520°N, 12.630°E)"
+    echo "  LEIPZIG    - Leipzig, Germany (51.353°N, 12.435°E)"
+    echo "  LEIPZIG-LIM- Leipzig LIM, Germany (51.333°N, 12.389°E)"
+    echo "  LIMASSOL   - Limassol, Cyprus (34.677°N, 33.038°E)"
+    echo "  MACE-HEAD  - Mace Head, Ireland (53.326°N, 9.900°W)"
+    echo "  MAIDO      - Maïdo Observatory, Réunion (-21.079°S, 55.383°E)"
+    echo "  MINDELO    - Mindelo, Cabo Verde (16.878°N, 24.995°W)"
+    echo "  NEUMAYER   - Neumayer Station, Antarctica (-70.660°S, 8.284°W)"
+    echo "  NORUNDA    - Norunda, Sweden (60.086°N, 17.479°E)"
+    echo "  NY-ALESUND - Ny-Ålesund, Norway (78.923°N, 11.922°E)"
+    echo "  PAYERNE    - Payerne, Switzerland (46.813°N, 6.944°E)"
+    echo "  POTENZA    - Potenza, Italy (40.601°N, 15.724°E)"
+    echo "  RZECIN     - Rzecin, Poland (52.758°N, 16.310°E)"
+    echo "  SCHNEEFERNERHAUS - Schneefernerhaus, Germany (47.417°N, 10.977°E)"
+    echo "  WARSAW     - Warsaw, Poland (52.210°N, 20.980°E)"
+    echo ""
+    echo "Examples:"
+    echo "  $0 PALAISEAU    # Run analysis for SIRTA site"
+    echo "  $0 MUNICH       # Run analysis for LMU Munich site"
+    echo "  $0 GRANADA      # Run analysis for Granada site"
+    echo ""
+    echo "The script will:"
+    echo "  1. Process months: 2024-04 to 2024-09"
+    echo "  2. Generate LES suitability rankings"
+    echo "  3. Create visualizations for top 3 days per month"
+    echo "  4. Save results in SITE/output_YYYY-MM/ directories"
+    echo ""
+}
+
+# Parse command line arguments
+if [ "$1" = "-h" ] || [ "$1" = "--help" ] || [ "$1" = "help" ]; then
+    show_help
+    exit 0
+fi
+
+# Check if site argument is provided
+if [ -z "$1" ]; then
+    echo "Error: SITE argument is required"
+    echo ""
+    show_help
+    exit 1
+fi
+
+# Get site parameter from command line argument
+SITE="$1"
+
+# Validate site parameter
+case "$SITE" in
+    # Original sites
+    "PALAISEAU"|"MUNICH"|"CABAUW"|"LINDENBERG")
+        # Valid site
+        ;;
+    # CloudNet sites
+    "BUCHAREST"|"CHILBOLTON"|"CLUJ"|"GALATI"|"GRANADA"|"HYYTIALA"|"JUELICH"|"KENTTAROVA"|"LAMPEDUSA"|"LEIPZIG"|"LEIPZIG-LIM"|"LIMASSOL"|"MACE-HEAD"|"MAIDO"|"MINDELO"|"NEUMAYER"|"NORUNDA"|"NY-ALESUND"|"PAYERNE"|"POTENZA"|"RZECIN"|"SCHNEEFERNERHAUS"|"WARSAW")
+        # Valid site
+        ;;
+    *)
+        echo "Error: Invalid site '$SITE'"
+        echo ""
+        show_help
+        exit 1
+        ;;
+esac
 
 # Progress tracking file
 PROGRESS_FILE="multi_month_progress.txt"
@@ -55,18 +143,30 @@ log_progress() {
 # Function to check if month was already completed
 is_month_completed() {
     local month=$1
-    local output_dir="output_${month}"
+    local output_dir="${SITE}/output_${month}"
     local ranking_csv="$output_dir/les_suitability_ranking_${month}.csv"
     
-    # Check if ranking CSV already exists
-    if [ -f "$ranking_csv" ]; then
+    # Check if ranking CSV already exists and is valid (not empty)
+    if [ -f "$ranking_csv" ] && [ -s "$ranking_csv" ]; then
         print_status "Ranking CSV already exists for $month: $ranking_csv"
         return 0
     fi
     
-    # Also check progress file as backup
+    # Check if output directory exists but CSV is missing or empty
+    if [ -d "$output_dir" ] && [ ! -f "$ranking_csv" ]; then
+        print_warning "Output directory exists for $month but no valid CSV found - will reprocess"
+        return 1
+    fi
+    
+    # Check progress file as backup
     if grep -q "^$month:completed:" "$PROGRESS_FILE" 2>/dev/null; then
-        return 0
+        # Double-check that the CSV actually exists
+        if [ -f "$ranking_csv" ] && [ -s "$ranking_csv" ]; then
+            return 0
+        else
+            print_warning "Progress file shows $month as completed but CSV is missing - will reprocess"
+            return 1
+        fi
     else
         return 1
     fi
@@ -83,6 +183,9 @@ activate_wur() {
         return 1
     fi
 }
+
+# Get Python path from WUR environment
+WUR_PYTHON="/home/MINES/maragoncerecedes/virtualenvs/WUR/bin/python"
 
 # Function to check if data directory exists
 check_data_directory() {
@@ -103,7 +206,7 @@ check_data_directory() {
 # Function to process a single month with comprehensive error handling
 process_month() {
     local month=$1
-    local output_dir="output_${month}"
+    local output_dir="${SITE}/output_${month}"
     local max_retries=3
     local retry_count=0
     
@@ -131,7 +234,125 @@ process_month() {
         print_status "Running LES analysis for $month (attempt $((retry_count + 1))/$max_retries)..."
         cd "$SCRIPT_DIR"
         
-        if python les-screening-monthly.py --month "$month" --data-root "$DATA_ROOT" --out-root "$output_dir"; then
+        # Get coordinates based on site
+        case "$SITE" in
+            # Original sites
+            "PALAISEAU")
+                lat="48.717"
+                lon="2.209"
+                ;;
+            "MUNICH")
+                lat="48.148"
+                lon="11.573"
+                ;;
+            "CABAUW")
+                lat="51.968"
+                lon="4.927"
+                ;;
+            "LINDENBERG")
+                lat="52.208"
+                lon="14.118"
+                ;;
+            # CloudNet sites
+            "BUCHAREST")
+                lat="44.344"
+                lon="26.012"
+                ;;
+            "CHILBOLTON")
+                lat="51.144"
+                lon="-1.439"
+                ;;
+            "CLUJ")
+                lat="46.768"
+                lon="23.540"
+                ;;
+            "GALATI")
+                lat="45.435"
+                lon="28.037"
+                ;;
+            "GRANADA")
+                lat="37.164"
+                lon="-3.605"
+                ;;
+            "HYYTIALA")
+                lat="61.844"
+                lon="24.287"
+                ;;
+            "JUELICH")
+                lat="50.908"
+                lon="6.413"
+                ;;
+            "KENTTAROVA")
+                lat="67.987"
+                lon="24.243"
+                ;;
+            "LAMPEDUSA")
+                lat="35.520"
+                lon="12.630"
+                ;;
+            "LEIPZIG")
+                lat="51.353"
+                lon="12.435"
+                ;;
+            "LEIPZIG-LIM")
+                lat="51.333"
+                lon="12.389"
+                ;;
+            "LIMASSOL")
+                lat="34.677"
+                lon="33.038"
+                ;;
+            "MACE-HEAD")
+                lat="53.326"
+                lon="-9.900"
+                ;;
+            "MAIDO")
+                lat="-21.079"
+                lon="55.383"
+                ;;
+            "MINDELO")
+                lat="16.878"
+                lon="-24.995"
+                ;;
+            "NEUMAYER")
+                lat="-70.660"
+                lon="-8.284"
+                ;;
+            "NORUNDA")
+                lat="60.086"
+                lon="17.479"
+                ;;
+            "NY-ALESUND")
+                lat="78.923"
+                lon="11.922"
+                ;;
+            "PAYERNE")
+                lat="46.813"
+                lon="6.944"
+                ;;
+            "POTENZA")
+                lat="40.601"
+                lon="15.724"
+                ;;
+            "RZECIN")
+                lat="52.758"
+                lon="16.310"
+                ;;
+            "SCHNEEFERNERHAUS")
+                lat="47.417"
+                lon="10.977"
+                ;;
+            "WARSAW")
+                lat="52.210"
+                lon="20.980"
+                ;;
+            *)
+                echo "Error: Unknown site '$SITE'"
+                exit 1
+                ;;
+        esac
+        
+        if "$WUR_PYTHON" les-screening-monthly.py --month "$month" --data-root "$DATA_ROOT" --out-root "$output_dir" --lat "$lat" --lon "$lon" --site "$SITE"; then
             print_success "LES analysis completed for $month"
             break
         else
@@ -149,7 +370,7 @@ process_month() {
     done
     
     # Check if ranking CSV was created
-    local ranking_csv="$output_dir/les_suitability_ranking_${month}.csv"
+    local ranking_csv="$output_dir/les_suitability_ranking_${month}_${SITE}.csv"
     if [ ! -f "$ranking_csv" ]; then
         print_error "Ranking CSV not found: $ranking_csv"
         log_progress "$month" "failed_no_ranking_csv"
@@ -163,7 +384,7 @@ process_month() {
     while [ $retry_count -lt $max_retries ]; do
         print_status "Generating visualizations for top 3 days in $month (attempt $((retry_count + 1))/$max_retries)..."
         
-        if python generate_top_day_visualizations.py; then
+        if SITE="$SITE" MONTH="$month" "$WUR_PYTHON" generate_top_day_visualizations.py; then
             print_success "Visualizations completed for $month"
             break
         else
@@ -264,8 +485,8 @@ show_summary() {
     local skipped_count=0
     
     for month in "${MONTHS[@]}"; do
-        local output_dir="output_${month}"
-        local ranking_csv="$output_dir/les_suitability_ranking_${month}.csv"
+        local output_dir="${SITE}/output_${month}"
+        local ranking_csv="$output_dir/les_suitability_ranking_${month}_${SITE}.csv"
         local gif_dir="$output_dir/top_days_gif"
         
         echo ""
@@ -314,6 +535,7 @@ main() {
     trap cleanup_on_exit SIGINT SIGTERM
     
     print_status "Starting robust multi-month LES analysis and visualization"
+    print_status "Processing site: $SITE"
     print_status "Processing months: ${MONTHS[*]}"
     print_status "Progress will be saved to: $PROGRESS_FILE"
     print_status "Log will be saved to: $LOG_FILE"
@@ -327,11 +549,12 @@ main() {
     # Show processing plan
     show_processing_plan
     
-    # Activate WUR environment
-    if ! activate_wur; then
-        print_error "Failed to activate WUR environment. Exiting."
+    # Check if WUR Python exists
+    if [ ! -f "$WUR_PYTHON" ]; then
+        print_error "WUR Python not found at: $WUR_PYTHON"
         exit 1
     fi
+    print_status "Using WUR Python: $WUR_PYTHON"
     
     # Clean up old files
     cleanup_old_pngs
