@@ -4,8 +4,7 @@ A pipeline to screen Meteosat NWCSAF Cloud Type data and identify days suitable 
 
 ### What this does
 - **Ranks LES days** from NWCSAF Cloud Type for April–September 2024 (configurable)
-- **Scores** with 75% breakability and 25% traditional criteria
-- **Generates** CSV rankings and GIFs/PNGs for the top days
+- **Generates** rankings and GIFs/PNGs for the top days
 - **Runs** across many CloudNet sites, one site or all sites
 
 ## Requirements
