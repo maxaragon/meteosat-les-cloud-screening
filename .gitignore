@@ -22,4 +22,8 @@ multi_month_progress.txt
 
 # GIF/PNG spillovers
 *.gif
-*.png 
+*.png
+
+# Keep example media
+!docs/examples/*.gif
+!docs/examples/*.png

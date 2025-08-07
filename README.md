@@ -9,16 +9,10 @@ A pipeline to screen Meteosat NWCSAF Cloud Type data and identify days suitable 
 
 ## Requirements
 - Python 3.8+
-- Recommended: activate the `WUR` environment before running
-  - conda/mamba: `conda activate WUR`
 - Install Python deps if needed:
 ```bash
 pip install -r requirements.txt
 ```
-
-## Data
-- Default data root used by scripts: `/mnt/m0/y-m.saint-drenan/data/NWCSAF_CloudType/2024`
-- If your data is elsewhere, edit `DATA_ROOT` in `run_multi_month_analysis.sh`.
 
 ## Main ways to run
 
@@ -47,6 +41,16 @@ python les-screening-monthly.py \
 
 ## Visualizations
 - After an analysis run, create GIFs/PNGs of the top ranked days.
+
+### Examples
+
+Palaiseau — Rank #1 day (2024-06-24):
+
+![](docs/examples/palaiseau_2024-06-24_rank01.gif)
+
+Munich — Rank #1 day (2024-08-10):
+
+![](docs/examples/munich_2024-08-10_rank01.gif)
 
 ### Top days (automatic ranking file discovery)
 ```bash
@@ -81,11 +85,26 @@ Also created at repo root during runs:
 - `multi_month_analysis_robust.log`
 - `multi_month_progress.txt`
 
-## Scoring (short)
-- **Breakability weight**: 0.75
-- **Traditional weight**: 0.25
-- Daytime hours: 06–18 UTC
-- Thin/high clouds penalized; extreme hourly swings penalized; very low variability penalized.
+## Scoring (overview)
+- Daytime considered: 06–18 UTC
+- Final score combines two components: breakability (variability) and mean warm-cloud presence
+- Weights: 0.75 breakability, 0.25 traditional (mean warm), but both are subject to penalties/bonuses below
+
+### Penalties
+- Low variability: progressively penalized when std(warm %) < 35, very strong penalty if < 15
+- Extreme hourly swings: penalized when max hourly change > 15%, very strong if > 50% (prefers gradual evolution)
+- Persistent clouds: std/mean ratio penalty; strong penalties for long sequences of 100% warm clouds (≥10, 12, 15 consecutive frames)
+- Overcast duration: strong penalty if > 30–50% of daytime, very strong if > 50%
+- Warm coverage outside sweet spot: penalize very high mean warm (> 80–90%), or very low (< 25%)
+- Thin/high clouds: strong to extreme penalties as mean cold % increases; even minimal cold clouds reduce score
+- Too much low coverage time: penalize if > 60% of the day is in 15–45% warm range (insufficient development)
+
+### Bonuses
+- Clear periods: bonus if > 10–20% of the day is clear (< 15% warm), indicating good breakability
+- Moderate development time: bonus when 45–75% warm coverage occupies ~20–50% of day
+- Good overall days: if mean warm > 60, std warm > 25, and mean cold < 5, reduce other penalties further
+
+The result is a normalized score (0–100) stored as `les_score_norm`, and a label: Likely / Probable / Unlikely.
 
 ## Tips
 - If data root differs, update `DATA_ROOT` in `run_multi_month_analysis.sh`.
